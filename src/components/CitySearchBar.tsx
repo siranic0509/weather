@@ -24,12 +24,15 @@ export function CitySearchBar({
   const [results, setResults] = useState<GeoLocationResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
+        setActiveIndex(-1);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -41,6 +44,7 @@ export function CitySearchBar({
     if (!trimmed) {
       setResults([]);
       setIsSearching(false);
+      setActiveIndex(-1);
       return;
     }
 
@@ -51,10 +55,12 @@ export function CitySearchBar({
         if (res.ok) {
           const data = (await res.json()) as {results: GeoLocationResult[]};
           setResults(data.results || []);
+          setActiveIndex(-1);
           setIsOpen(true);
         }
       } catch {
         setResults([]);
+        setActiveIndex(-1);
       } finally {
         setIsSearching(false);
       }
@@ -63,15 +69,69 @@ export function CitySearchBar({
     return () => clearTimeout(timer);
   }, [query]);
 
+  useEffect(() => {
+    if (activeIndex >= 0 && itemRefs.current[activeIndex]) {
+      itemRefs.current[activeIndex]?.scrollIntoView({block: 'nearest'});
+    }
+  }, [activeIndex]);
+
+  const selectLocationItem = (item: GeoLocationResult) => {
+    onSelectLocation(item);
+    setQuery('');
+    setIsOpen(false);
+    setActiveIndex(-1);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return;
+
+    if (e.key === 'ArrowDown') {
+      if (results.length === 0) return;
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        setActiveIndex(0);
+      } else {
+        setActiveIndex((prev) => (prev < results.length - 1 ? prev + 1 : 0));
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      if (results.length === 0) return;
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        setActiveIndex(results.length - 1);
+      } else {
+        setActiveIndex((prev) => (prev > 0 ? prev - 1 : results.length - 1));
+      }
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      if (isOpen && activeIndex >= 0 && activeIndex < results.length) {
+        e.preventDefault();
+        selectLocationItem(results[activeIndex]);
+      }
+      return;
+    }
+
+    if (e.key === 'Escape' && isOpen) {
+      e.preventDefault();
+      setIsOpen(false);
+      setActiveIndex(-1);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = query.trim();
     if (!trimmed) return;
 
     if (results.length > 0) {
-      onSelectLocation(results[0]);
-      setQuery('');
-      setIsOpen(false);
+      const target = activeIndex >= 0 && activeIndex < results.length ? results[activeIndex] : results[0];
+      selectLocationItem(target);
       return;
     }
 
@@ -81,11 +141,10 @@ export function CitySearchBar({
       if (res.ok) {
         const data = (await res.json()) as {results: GeoLocationResult[]};
         if (data.results && data.results.length > 0) {
-          onSelectLocation(data.results[0]);
-          setQuery('');
-          setIsOpen(false);
+          selectLocationItem(data.results[0]);
         } else {
           setResults([]);
+          setActiveIndex(-1);
           setIsOpen(true);
         }
       }
@@ -93,6 +152,9 @@ export function CitySearchBar({
       setIsSearching(false);
     }
   };
+
+  const activeDescendantId =
+    isOpen && activeIndex >= 0 && results[activeIndex] ? `city-option-${results[activeIndex].id}` : undefined;
 
   return (
     <section aria-label="도시 검색 및 설정" className="space-y-3">
@@ -105,11 +167,17 @@ export function CitySearchBar({
             />
             <input
               type="search"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={isOpen}
+              aria-controls="city-search-listbox"
+              aria-activedescendant={activeDescendantId}
               value={query}
               onFocus={() => {
                 if (results.length > 0) setIsOpen(true);
               }}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleInputKeyDown}
               placeholder="도시 또는 동네 검색 (예: 대구 남산동, 범어동, 서울, Tokyo)"
               aria-label="도시 또는 동네 이름 검색"
               className="w-full h-11 pl-10 pr-24 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-colors"
@@ -121,6 +189,7 @@ export function CitySearchBar({
                   setQuery('');
                   setResults([]);
                   setIsOpen(false);
+                  setActiveIndex(-1);
                 }}
                 aria-label="검색어 지우기"
                 className="absolute right-16 p-1.5 text-slate-400 hover:text-slate-700 transition-colors"
@@ -143,27 +212,44 @@ export function CitySearchBar({
               ) : results.length === 0 ? (
                 <div className="px-4 py-3 text-sm text-slate-500">검색 결과가 없습니다.</div>
               ) : (
-                <ul role="listbox" className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
-                  {results.map((item) => (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onSelectLocation(item);
-                          setQuery('');
-                          setIsOpen(false);
-                        }}
-                        className="w-full px-4 py-2.5 text-left hover:bg-slate-50 flex items-center justify-between gap-3 transition-colors"
-                      >
-                        <span className="text-sm font-medium text-slate-900 truncate">
-                          {item.name}
-                        </span>
-                        <span className="text-xs text-slate-500 shrink-0">
-                          {[item.admin1, item.country].filter(Boolean).join(' · ')}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
+                <ul
+                  id="city-search-listbox"
+                  role="listbox"
+                  className="divide-y divide-slate-100 max-h-72 overflow-y-auto"
+                >
+                  {results.map((item, idx) => {
+                    const isHighlighted = idx === activeIndex;
+                    return (
+                      <li key={item.id} role="option" aria-selected={isHighlighted} id={`city-option-${item.id}`}>
+                        <button
+                          ref={(el) => {
+                            itemRefs.current[idx] = el;
+                          }}
+                          type="button"
+                          onMouseEnter={() => setActiveIndex(idx)}
+                          onClick={() => selectLocationItem(item)}
+                          className={`w-full px-4 py-2.5 text-left flex items-center justify-between gap-3 transition-colors ${
+                            isHighlighted ? 'bg-blue-50 text-blue-900' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <span
+                            className={`text-sm font-medium truncate ${
+                              isHighlighted ? 'text-blue-900 font-semibold' : 'text-slate-900'
+                            }`}
+                          >
+                            {item.name}
+                          </span>
+                          <span
+                            className={`text-xs shrink-0 ${
+                              isHighlighted ? 'text-blue-700' : 'text-slate-500'
+                            }`}
+                          >
+                            {[item.admin1, item.country].filter(Boolean).join(' · ')}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>

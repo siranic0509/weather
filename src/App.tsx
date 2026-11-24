@@ -200,10 +200,17 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-8">
           {/* Zone 1: Brand wordmark */}
           <a
-            href="#current"
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              if (window.location.hash) {
+                window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+              }
+              window.scrollTo({top: 0, behavior: 'smooth'});
+            }}
             className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
           >
-            하늘결 날씨
+            민수 테스트 날씨 앱
           </a>
 
           {/* Zone 2: 4 single-line nav links */}
